@@ -20,6 +20,11 @@ const double Lf = 2;
 Eigen::VectorXd globalKinematic(Eigen::VectorXd state,
                                 Eigen::VectorXd actuators, double dt) {
   Eigen::VectorXd next_state(state.size());
+  next_state[0] = state[0] + state[3] * cos(state[2]) * dt;
+  next_state[1] = state[1] + state[3] * sin(state[2]) * dt;
+  next_state[2] = state[2] + (state[3] / Lf) * actuators[0] * dt;
+  next_state[3] = state[3] + actuators[1] * dt;
+
   return next_state;
 }
 
@@ -37,3 +42,9 @@ int main() {
 
   std::cout << next_state << std::endl;
 }
+/** State Equations - Simplified model
+* x​t+1 = x​t + v​t​​ ∗ cos(ψ​t) ∗ dt
+* yt+1 = yt + vt ∗ sin(ψt) ∗ dt
+* ψt+1 = ψt + ((vt / Lf) * δ ∗ dt)
+* v​t+1​ = vt + at ∗ dt
+*/
