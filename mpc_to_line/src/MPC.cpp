@@ -11,8 +11,8 @@ namespace plt = matplotlibcpp;
 using CppAD::AD;
 
 // TODO: Set N and dt
-size_t N = ? ;
-double dt = ? ;
+size_t N = 25 ;
+double dt = 0.05 ;
 
 // This value assumes the model presented in the classroom is used.
 //
@@ -59,6 +59,23 @@ class FG_eval {
     // Reference State Cost
     // TODO: Define the cost related the reference state and
     // any anything you think may be beneficial.
+      for(int t = 0; t < N; t++){
+          fg[0] += CppAD::pow(vars[cte_start + t], 2);
+          fg[0] += CppAD::pow(vars[epsi_start + t], 2);
+          fg[0] += CppAD::pow(vars[v_start + t] - ref_v, 2);
+      }
+      
+      // Minimize actuator use // Why N - 1 ??
+      for (int t = 0; t < N - 1; t++){
+          fg[0] += CppAD::pow(vars[delta_start + t], 2);
+          fg[0] += CppAD::pow(vars[a_start + t], 2);
+      }
+      
+      // Minimize the value gap between sequential actuations // Why N - 2??
+      for (int t = 0; t < N - 2; t++){
+          fg[0] += CppAD::pow(vars[delta_start + t + 1] - vars[delta_start + t], 2);
+          fg[0] += CppAD::pow(vars[a_start + t + 1] - vars[a_start + t], 2);
+      }
 
     //
     // Setup Constraints
@@ -79,21 +96,48 @@ class FG_eval {
 
     // The rest of the constraints
     for (int t = 1; t < N; t++) {
+        // at Time t = 1
       AD<double> x1 = vars[x_start + t];
-
+      AD<double> y1 = vars[y_start + t];
+      AD<double> psi1 = vars[psi_start + t];
+      AD<double> v1 = vars[v_start + t];
+      AD<double> cte1 = vars[cte_start + t];
+      AD<double> epsi1 = vars[epsi_start + t];
+        
+        
+        // at time t = 0
       AD<double> x0 = vars[x_start + t - 1];
+      AD<double> y0 = vars[y_start + t - 1];
       AD<double> psi0 = vars[psi_start + t - 1];
       AD<double> v0 = vars[v_start + t - 1];
-
-      // Here's `x` to get you started.
-      // The idea here is to constraint this value to be 0.
-      //
-      // NOTE: The use of `AD<double>` and use of `CppAD`!
-      // This is also CppAD can compute derivatives and pass
-      // these to the solver.
-
-      // TODO: Setup the rest of the model constraints
-      fg[1 + x_start + t] = x1 - (x0 + v0 * CppAD::cos(psi0) * dt);
+      AD<double> cte0 = vars[cte_start + t - 1];
+      AD<double> epsi0 = vars[epsi_start + t - 1];
+        
+        // Only consider the actuation at time t.
+        AD<double> delta0 = vars[delta_start + t - 1];
+        AD<double> a0 = vars[a_start + t - 1];
+        
+        AD<double> f0 = coeffs[0] + coeffs[1] * x0;
+        AD<double> psides0 = CppAD::atan(coeffs[1]);
+        
+        // Here's `x` to get you started.
+        // The idea here is to constraint this value to be 0.
+        //
+        // Recall the equations for the model:
+        // x_[t+1] = x[t] + v[t] * cos(psi[t]) * dt
+        // y_[t+1] = y[t] + v[t] * sin(psi[t]) * dt
+        // psi_[t+1] = psi[t] + v[t] / Lf * delta[t] * dt
+        // v_[t+1] = v[t] + a[t] * dt
+        // cte[t+1] = f(x[t]) - y[t] + v[t] * sin(epsi[t]) * dt
+        // epsi[t+1] = psi[t] - psides[t] + v[t] * delta[t] / Lf * dt
+        fg[1 + x_start + t] = x1 - (x0 + v0 * CppAD::cos(psi0) * dt);
+        fg[1 + y_start + t] = y1 - (y0 + v0 * CppAD::sin(psi0) * dt);
+        fg[1 + psi_start + t] = psi1 - (psi0 + v0 * delta0 / Lf * dt);
+        fg[1 + v_start + t] = v1 - (v0 + a0 * dt);
+        fg[1 + cte_start + t] =
+        cte1 - ((f0 - y0) + (v0 * CppAD::sin(epsi0) * dt));
+        fg[1 + epsi_start + t] =
+        epsi1 - ((psi0 - psides0) + v0 * delta0 / Lf * dt);
     }
   }
 };
@@ -263,7 +307,7 @@ int main() {
   ptsy << -1, -1;
 
   // TODO: fit a polynomial to the above x and y coordinates
-  auto coeffs = ? ;
+  auto coeffs = polyfit(ptsx, ptsy, 1) ;
 
   // NOTE: free feel to play around with these
   double x = -1;
@@ -271,9 +315,13 @@ int main() {
   double psi = 0;
   double v = 10;
   // TODO: calculate the cross track error
-  double cte = ? ;
+    // The cross track error is calculated by evaluating at polynomial at x, f(x)
+    // and subtracting y.
+  double cte = polyeval(coeffs, x) - y;
   // TODO: calculate the orientation error
-  double epsi = ? ;
+    // Due to the sign starting at 0, the orientation error is -f'(x).
+    // derivative of coeffs[0] + coeffs[1] * x -> coeffs[1]
+    double epsi = psi - atan(coeffs[1]);
 
   Eigen::VectorXd state(6);
   state << x, y, psi, v, cte, epsi;
